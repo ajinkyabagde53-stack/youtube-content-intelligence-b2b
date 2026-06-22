@@ -2,11 +2,13 @@
 YouTube Content Intelligence Agent for B2B SaaS
 Step 1: Setup — imports, API config, ICP input
 Step 2: YouTube search — query builder + video results fetcher
+Step 3: Transcript fetcher — pull transcripts from competitor videos
 """
 
 import os
 import requests
 from dotenv import load_dotenv
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # Load API keys from .env file
 load_dotenv()
@@ -88,6 +90,44 @@ def fetch_all_search_results(icp, api_key):
     return all_results
 
 
+# ── Step 3: Transcript Fetcher ────────────────────────────────────────────────
+
+def fetch_transcript(video_id):
+    """Fetch transcript for a single YouTube video."""
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        # Join all text segments into one clean string
+        full_text = " ".join([entry["text"] for entry in transcript])
+        return full_text
+    except Exception as e:
+        print(f"   ⚠️  Could not fetch transcript for {video_id}: {e}")
+        return None
+
+
+def fetch_competitor_transcripts(search_results, max_videos=5):
+    """
+    Pull transcripts from top videos in search results.
+    Limits to max_videos per query to stay within API limits.
+    """
+    transcripts = {}
+
+    for query, videos in search_results.items():
+        print(f"\n📄 Fetching transcripts for: {query}")
+        for video in videos[:max_videos]:
+            video_id = video["video_id"]
+            title = video["title"]
+            print(f"   → {title[:60]}...")
+            text = fetch_transcript(video_id)
+            if text:
+                transcripts[video_id] = {
+                    "title": title,
+                    "channel": video["channel"],
+                    "transcript": text,
+                }
+
+    return transcripts
+
+
 if __name__ == "__main__":
     print("✅ Step 1 complete — ICP loaded successfully")
     print(f"Target: {ICP['job_title']} in {ICP['industry']}")
@@ -97,5 +137,9 @@ if __name__ == "__main__":
     if YOUTUBE_API_KEY and YOUTUBE_API_KEY != "your_youtube_api_key_here":
         results = fetch_all_search_results(ICP, YOUTUBE_API_KEY)
         print(f"\n✅ Step 2 complete — {sum(len(v) for v in results.values())} videos found")
+
+        print("\n🚀 Step 3 — Fetching transcripts...")
+        transcripts = fetch_competitor_transcripts(results)
+        print(f"\n✅ Step 3 complete — {len(transcripts)} transcripts fetched")
     else:
         print("⚠️  Add your YouTube API key to .env to run search")
