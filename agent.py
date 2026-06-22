@@ -4,6 +4,7 @@ Step 1: Setup — imports, API config, ICP input
 Step 2: YouTube search — query builder + video results fetcher
 Step 3: Transcript fetcher — pull transcripts from competitor videos
 Step 4: Claude AI analysis — extract patterns, hooks, and gaps from transcripts
+Step 5: Brief generator — produce a ready-to-film video brief from the analysis
 """
 
 import os
@@ -186,6 +187,69 @@ def analyze_all_transcripts(transcripts, api_key):
     return analyses
 
 
+# ── Step 5: Video Brief Generator ────────────────────────────────────────────
+
+def generate_video_brief(icp, analyses, api_key):
+    """
+    Uses Claude to synthesize all analyses into one
+    ready-to-film video brief for the highest-opportunity topic.
+    """
+    client = anthropic.Anthropic(api_key=api_key)
+
+    # Combine all analyses into one context block
+    combined = ""
+    for video_id, data in analyses.items():
+        combined += f"\n\nVideo: {data['title']}\nChannel: {data['channel']}\n{data['analysis']}"
+
+    prompt = f"""You are a B2B YouTube strategist. Based on competitor video analyses below,
+generate a complete video brief for a B2B SaaS company targeting this ICP:
+
+Job Title: {icp['job_title']}
+Industry: {icp['industry']}
+Company Size: {icp['company_size']}
+Pain Points: {', '.join(icp['pain_points'])}
+Product Category: {icp['product_category']}
+
+COMPETITOR ANALYSES:
+{combined[:6000]}
+
+Generate a complete video brief with exactly these sections:
+
+TOPIC: (the specific video topic — high demand, not well covered by competitors)
+SEO TITLE: (search-intent phrased, under 60 characters)
+ALGORITHM TITLE: (curiosity/browse optimised alternative)
+HOOK (first 30 seconds): (specific problem statement that makes the ICP stop scrolling)
+OUTLINE:
+  Point 1:
+  Point 2:
+  Point 3:
+  Point 4:
+  Point 5:
+PROOF POINTS: (data, case studies, or examples to include)
+THUMBNAIL DIRECTION: (face expression + text overlay + background color)
+CTA: (call to action matched to buyer journey stage)
+WHAT NOT TO DO: (mistakes competitors make on this topic)
+"""
+
+    message = client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return message.content[0].text
+
+
+def save_brief(brief, icp):
+    """Save the generated brief to a markdown file."""
+    filename = f"brief_{icp['job_title'].replace(' ', '_').lower()}.md"
+    with open(filename, "w") as f:
+        f.write(f"# Video Brief — {icp['job_title']} in {icp['industry']}\n\n")
+        f.write(brief)
+    print(f"\n💾 Brief saved to: {filename}")
+    return filename
+
+
 if __name__ == "__main__":
     print("✅ Step 1 complete — ICP loaded successfully")
     print(f"Target: {ICP['job_title']} in {ICP['industry']}")
@@ -204,6 +268,13 @@ if __name__ == "__main__":
         if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_anthropic_api_key_here":
             analyses = analyze_all_transcripts(transcripts, ANTHROPIC_API_KEY)
             print(f"\n✅ Step 4 complete — {len(analyses)} videos analyzed")
+
+            print("\n🚀 Step 5 — Generating video brief...")
+            brief = generate_video_brief(ICP, analyses, ANTHROPIC_API_KEY)
+            save_brief(brief, ICP)
+            print("\n✅ All steps complete — your video brief is ready!")
+            print("\n" + "="*60)
+            print(brief)
         else:
             print("⚠️  Add your Anthropic API key to .env to run analysis")
     else:
