@@ -3,12 +3,14 @@ YouTube Content Intelligence Agent for B2B SaaS
 Step 1: Setup — imports, API config, ICP input
 Step 2: YouTube search — query builder + video results fetcher
 Step 3: Transcript fetcher — pull transcripts from competitor videos
+Step 4: Claude AI analysis — extract patterns, hooks, and gaps from transcripts
 """
 
 import os
 import requests
 from dotenv import load_dotenv
 from youtube_transcript_api import YouTubeTranscriptApi
+import anthropic
 
 # Load API keys from .env file
 load_dotenv()
@@ -128,6 +130,62 @@ def fetch_competitor_transcripts(search_results, max_videos=5):
     return transcripts
 
 
+# ── Step 4: Claude AI Analysis ───────────────────────────────────────────────
+
+def analyze_transcript_with_claude(transcript, title, api_key):
+    """
+    Send a transcript to Claude and extract:
+    - Core argument
+    - Hook structure (first 30 seconds)
+    - Keywords used
+    - Content gaps or weaknesses
+    """
+    client = anthropic.Anthropic(api_key=api_key)
+
+    prompt = f"""You are a B2B content strategist analyzing a YouTube video transcript.
+
+Video title: {title}
+
+Transcript:
+{transcript[:4000]}
+
+Analyze this transcript and return a structured response with exactly these sections:
+
+CORE ARGUMENT: (one sentence — what is the main point of this video?)
+HOOK STRUCTURE: (how does the video open? what problem does it hook on?)
+KEYWORDS USED: (list the 5-8 most important keywords/phrases)
+CONTENT GAPS: (what important angles, data, or insights did this video miss?)
+AUDIENCE FIT: (is this content aimed at the right B2B buyer, or too broad?)
+"""
+
+    message = client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return message.content[0].text
+
+
+def analyze_all_transcripts(transcripts, api_key):
+    """Run Claude analysis on all fetched transcripts."""
+    analyses = {}
+
+    for video_id, data in transcripts.items():
+        print(f"\n🤖 Analyzing: {data['title'][:60]}...")
+        analysis = analyze_transcript_with_claude(
+            data["transcript"], data["title"], api_key
+        )
+        analyses[video_id] = {
+            "title": data["title"],
+            "channel": data["channel"],
+            "analysis": analysis,
+        }
+        print("   ✅ Done")
+
+    return analyses
+
+
 if __name__ == "__main__":
     print("✅ Step 1 complete — ICP loaded successfully")
     print(f"Target: {ICP['job_title']} in {ICP['industry']}")
@@ -141,5 +199,12 @@ if __name__ == "__main__":
         print("\n🚀 Step 3 — Fetching transcripts...")
         transcripts = fetch_competitor_transcripts(results)
         print(f"\n✅ Step 3 complete — {len(transcripts)} transcripts fetched")
+
+        print("\n🚀 Step 4 — Analyzing transcripts with Claude...")
+        if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your_anthropic_api_key_here":
+            analyses = analyze_all_transcripts(transcripts, ANTHROPIC_API_KEY)
+            print(f"\n✅ Step 4 complete — {len(analyses)} videos analyzed")
+        else:
+            print("⚠️  Add your Anthropic API key to .env to run analysis")
     else:
         print("⚠️  Add your YouTube API key to .env to run search")
